@@ -16,7 +16,14 @@ PyYAML>=6.0
 python-docx>=1.1        # 导出 Word 简历；缺失时只输出 Markdown
 rich>=13.0             # 终端美化输出；缺失时退化为朴素 print
 
+# ---- Web 界面（可选，只有跑 run_web.py 时才需要）
+# 实测新增的只有：starlette / uvicorn / click / annotated-doc / opentelemetry-api
+# pydantic、anyio、h11、typing-extensions 环境里本来就有
+fastapi>=0.115
+uvicorn>=0.30
+
 # 说明：以下包本项目的设计**刻意不依赖**
 #   langchain        —— 只需要 langchain-core，元包会拖入大量无关依赖
 #   langgraph        —— Agent 循环在 src/job_agent/agent.py 里手写实现
 #   langchain-community —— 未使用其中任何组件
+#   gradio/streamlit —— Web 界面选了 FastAPI：依赖更轻、可控性更高
