@@ -20,7 +20,7 @@ for _path in (str(SRC_DIR), str(PROJECT_ROOT)):
         sys.path.insert(0, _path)
 
 from job_agent import prompts  # noqa: E402
-from job_agent.config import Settings  # noqa: E402
+from job_agent.config import设置# noqa: E402
 from job_agent.llm import _build_system, extract_json  # noqa: E402
 from job_agent.render import match_to_markdown, resume_to_markdown  # noqa: E402
 from job_agent.schemas import (  # noqa: E402
@@ -93,7 +93,7 @@ def test_build_system_keeps_existing_json_mention():
 @test
 def test_settings_rejects_bad_model():
     try:
-        Settings(api_key="x", model="deepseek-v4-flash")
+        设置(api_key="x", model="deepseek-v4-flash")
     except ValueError:
         return
     raise AssertionError("无效模型名应当被拒绝")
@@ -102,7 +102,7 @@ def test_settings_rejects_bad_model():
 @test
 def test_settings_accepts_valid_models():
     for model in ("deepseek-flash", "deepseek-v4-pro"):
-        Settings(api_key="x", model=model)
+        设置(api_key="x", model=model)
 
 
 @test
@@ -288,7 +288,7 @@ def test_student_resume_puts_education_and_projects_before_skills():
     """应届生没有工作经历：不出现空的工作经历小节，校园经历单独成节且靠前。"""
     resume = TailoredResume(
         target_title="嵌入式软件工程师",
-        contact=ContactInfo(name="冯天胤"),
+        contact=ContactInfo(name="某某某"),
         summary="大四在读，嵌入式软件方向。",
         core_skills=["STM32", "RT-Thread"],
         experiences=[],  # 应届生
@@ -302,7 +302,7 @@ def test_student_resume_puts_education_and_projects_before_skills():
         ],
         campus=[
             ResumeExperience(
-                company="校学生资助管理部",
+                company="某某某管理部",
                 title="部长",
                 period="2024.03 - 2026.06",
                 bullets=["统筹 20 余名成员分工"],
@@ -315,7 +315,7 @@ def test_student_resume_puts_education_and_projects_before_skills():
 
     assert "工作经历" not in md, "应届生简历不应出现空的工作经历小节"
     assert "## 校园经历" in md, "校园经历必须单独成节"
-    assert "校学生资助管理部 — 部长" in md
+    assert "某某某管理部 — 部长" in md
     # 应届生版式：教育背景与项目经历都要排在核心技能之前
     assert md.index("## 教育背景") < md.index("## 核心技能")
     assert md.index("## 项目经历") < md.index("## 核心技能")
@@ -356,7 +356,7 @@ def test_campus_section_renders_in_docx():
         projects=[ResumeProject(name="气象站项目", bullets=["做了驱动"])],
         campus=[
             ResumeExperience(
-                company="校学生资助管理部", title="部长", bullets=["统筹 20 人"]
+                company="某某某管理部", title="部长", bullets=["统筹 20 人"]
             )
         ],
         education=["某大学 计算机 本科"],
@@ -366,7 +366,7 @@ def test_campus_section_renders_in_docx():
 
     text = "\n".join(p.text for p in Document(str(target)).paragraphs)
     assert "校园经历" in text
-    assert "校学生资助管理部 — 部长" in text
+    assert "某某某管理部 — 部长" in text
     assert "工作经历" not in text
     target.unlink()
 
@@ -465,7 +465,7 @@ def test_sample_data_files_exist():
 def test_agent_tools_registered_and_documented():
     from job_agent.tools import AgentSession, build_tools
 
-    tools = build_tools(AgentSession(settings=Settings(api_key="dummy")))
+    tools = build_tools(AgentSession(settings=设置(api_key="dummy")))
     names = [t.name for t in tools]
     for expected in (
         "load_job_description",
@@ -487,7 +487,7 @@ def test_agent_tools_registered_and_documented():
 def test_tool_without_jd_gives_actionable_error():
     from job_agent.tools import AgentSession, build_tools
 
-    session = AgentSession(settings=Settings(api_key="dummy"))
+    session = AgentSession(settings=设置(api_key="dummy"))
     analyze = next(t for t in build_tools(session) if t.name == "analyze_match")
     # ensure_jd 在没有 JD 时抛 ValueError，Agent 循环会把它转成文本回灌
     try:
@@ -563,7 +563,7 @@ def test_session_context_tells_model_what_is_already_loaded():
     from job_agent.agent import _session_context
     from job_agent.tools import AgentSession
 
-    session = AgentSession(settings=Settings(api_key="dummy"))
+    session = AgentSession(settings=设置(api_key="dummy"))
 
     empty = _session_context(session)
     assert "尚未载入 JD" in empty
@@ -582,7 +582,7 @@ def test_runner_rebuilds_system_message_each_turn():
     from job_agent.agent import AgentRunner
     from job_agent.tools import AgentSession
 
-    session = AgentSession(settings=Settings(api_key="dummy"))
+    session = AgentSession(settings=设置(api_key="dummy"))
     runner = AgentRunner(session=session)
 
     first = str(runner.history[0].content)
