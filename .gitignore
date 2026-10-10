@@ -1,0 +1,22 @@
+# 环境与密钥
+.env
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# 工具
+.idea/
+.vscode/
+
+# 运行产物
+.cache/
+outputs/
+*.docx
+!templates/*.docx

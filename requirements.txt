@@ -1,0 +1,22 @@
+# 运行本项目所需的依赖。
+# 注意：本项目的环境由 conda 管理，环境名建议 langchain_env。
+#
+# 安装：
+#   conda activate langchain_env
+#   python -m pip install -r requirements.txt
+
+# ---- 核心（必需）
+langchain-core>=1.0,<2.0
+langchain-deepseek>=1.0,<2.0
+pydantic>=2.9,<3.0
+python-dotenv>=1.0
+PyYAML>=6.0
+
+# ---- 可选（缺失时会自动降级，不影响核心功能）
+python-docx>=1.1        # 导出 Word 简历；缺失时只输出 Markdown
+rich>=13.0             # 终端美化输出；缺失时退化为朴素 print
+
+# 说明：以下包本项目的设计**刻意不依赖**
+#   langchain        —— 只需要 langchain-core，元包会拖入大量无关依赖
+#   langgraph        —— Agent 循环在 src/job_agent/agent.py 里手写实现
+#   langchain-community —— 未使用其中任何组件
