@@ -21,6 +21,7 @@ rich>=13.0             # 终端美化输出；缺失时退化为朴素 print
 # pydantic、anyio、h11、typing-extensions 环境里本来就有
 fastapi>=0.115
 uvicorn>=0.30
+python-multipart>=0.0.9   # FastAPI 接收上传文件所必需
 
 # 说明：以下包本项目的设计**刻意不依赖**
 #   langchain        —— 只需要 langchain-core，元包会拖入大量无关依赖

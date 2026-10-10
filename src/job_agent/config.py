@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
@@ -22,9 +22,17 @@ DATA_DIR = PROJECT_ROOT / "data"
 JD_DIR = DATA_DIR / "jds"
 OUTPUT_DIR = PROJECT_ROOT / "outputs"
 CACHE_DIR = PROJECT_ROOT / ".cache"
+#: 底稿的自动备份目录（网页编辑底稿时每次保存都会留一份）
+BACKUP_DIR = PROJECT_ROOT / ".backups"
 
 MASTER_PROFILE_MD = DATA_DIR / "master_profile.md"
 PROFILE_CACHE = CACHE_DIR / "candidate_profile.json"
+
+#: 保留多少个底稿历史版本
+BACKUP_KEEP = 10
+
+#: 网页端填写 API Key 时使用的请求头名
+API_KEY_HEADER = "X-DeepSeek-Key"
 
 # ---------------------------------------------------------------- 模型
 
@@ -76,10 +84,21 @@ class Settings:
     def require_api_key(self) -> str:
         if not self.api_key:
             raise RuntimeError(
-                "未找到 DEEPSEEK_API_KEY。请复制 .env.example 为 .env，"
-                "并填入你的 DeepSeek API Key。"
+                "缺少 API Key。请在页面右上角填入你自己的 DeepSeek API Key"
+                "（服务端不会保存它，只用于本次请求），"
+                "或把 .env.example 复制为 .env 并配置 DEEPSEEK_API_KEY。"
             )
         return self.api_key
+
+
+def with_api_key(settings: Settings, api_key: str) -> Settings:
+    """派生一个只替换了 api_key 的 Settings 副本。
+
+    Settings 会一路传进 run_pipeline 及其下游，所以「按请求使用访客自己的 Key」
+    **不需要改动任何业务代码** —— 只要给这次请求换一个 Settings 对象。
+    这样也不会污染全局单例，多请求并发时天然安全。
+    """
+    return replace(settings, api_key=(api_key or "").strip())
 
 
 def _env_bool(name: str, default: bool) -> bool:
@@ -101,7 +120,7 @@ def _env_float(name: str, default: float) -> float:
 
 def ensure_dirs() -> None:
     """确保运行期需要的目录存在。"""
-    for path in (DATA_DIR, JD_DIR, OUTPUT_DIR, CACHE_DIR):
+    for path in (DATA_DIR, JD_DIR, OUTPUT_DIR, CACHE_DIR, BACKUP_DIR):
         path.mkdir(parents=True, exist_ok=True)
 
 

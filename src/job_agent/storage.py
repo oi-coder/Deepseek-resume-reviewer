@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -14,26 +16,154 @@ from .config import CACHE_DIR, JD_DIR, OUTPUT_DIR, ensure_dirs
 # ---------------------------------------------------------------- 文本读写
 
 
+def decode_bytes(data: bytes) -> str:
+    """把字节按 utf-8 / gbk 依次尝试解码，并统一换行符为 ``\\n``。
+
+    统一换行很关键：Windows 上写文件默认会把 ``\\n`` 变成 ``\\r\\n``，
+    如果读回来不还原，字符数就对不上、底稿往返比较永远不相等、
+    按文本哈希做的缓存也会莫名失效。
+    """
+    text: str | None = None
+    for encoding in ("utf-8-sig", "utf-8", "gbk"):
+        try:
+            text = data.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    if text is None:
+        text = data.decode("utf-8", errors="ignore")
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def read_text(path: str | Path) -> str:
     """读取文本文件，自动尝试 utf-8 / gbk（国内 JD 常见编码）。"""
     path = Path(path)
     if not path.exists():
         raise FileNotFoundError(f"文件不存在：{path}")
+    return decode_bytes(path.read_bytes())
 
-    for encoding in ("utf-8", "utf-8-sig", "gbk"):
-        try:
-            return path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
-            continue
-    # 最后兜底，忽略无法解码的字节
-    return path.read_text(encoding="utf-8", errors="ignore")
+
+def _write(path: Path, content: str) -> None:
+    """统一以 utf-8 + LF 写出，保证与 read_text 精确往返。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(content)
 
 
 def write_text(path: str | Path, content: str) -> Path:
     path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
+    _write(path, content)
     return path
+
+
+def write_text_atomic(path: str | Path, content: str) -> Path:
+    """原子写入：先写临时文件再替换，避免中途失败留下半个文件。
+
+    底稿是唯一事实来源，半截文件比写入失败更糟。
+    """
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f".{path.name}.tmp")
+    _write(tmp, content)
+    os.replace(tmp, path)  # Windows 上也是原子的
+    return path
+
+
+# ---------------------------------------------------------------- 备份
+
+
+def backup_file(
+    path: str | Path,
+    *,
+    backup_dir: str | Path | None = None,
+    keep: int | None = None,
+) -> Path | None:
+    """把文件复制一份到备份目录，返回备份路径（源文件不存在则返回 None）。
+
+    备份名形如 ``master_profile-20261010-181500.md``，按时间倒序保留 keep 份。
+    """
+    from .config import BACKUP_DIR, BACKUP_KEEP
+
+    source = Path(path)
+    if not source.is_file():
+        return None
+
+    directory = Path(backup_dir) if backup_dir else Path(BACKUP_DIR)
+    directory.mkdir(parents=True, exist_ok=True)
+    keep = BACKUP_KEEP if keep is None else keep
+
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")[:-3]
+    target = directory / f"{source.stem}-{stamp}{source.suffix or '.md'}"
+    shutil.copy2(source, target)
+
+    # 只留最近 keep 份
+    existing = sorted(
+        (p for p in directory.iterdir() if p.is_file() and p.stem.startswith(source.stem)),
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    for old in existing[keep:]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+    return target
+
+
+def list_backups(
+    path: str | Path, *, backup_dir: str | Path | None = None
+) -> list[dict[str, Any]]:
+    """列出某个文件的备份，按时间倒序。"""
+    from .config import BACKUP_DIR
+
+    source = Path(path)
+    directory = Path(backup_dir) if backup_dir else Path(BACKUP_DIR)
+    if not directory.is_dir():
+        return []
+
+    items = []
+    for item in directory.iterdir():
+        if not item.is_file() or not item.stem.startswith(source.stem):
+            continue
+        stat = item.stat()
+        items.append(
+            {
+                "name": item.name,
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+                "time": datetime.fromtimestamp(stat.st_mtime).strftime(
+                    "%Y-%m-%d %H:%M:%S"
+                ),
+            }
+        )
+    items.sort(key=lambda x: x["mtime"], reverse=True)
+    return items
+
+
+def restore_backup(
+    backup_name: str,
+    target: str | Path,
+    *,
+    backup_dir: str | Path | None = None,
+    keep_current: bool = True,
+) -> Path:
+    """从备份恢复。恢复前先把当前内容另存一份，避免「恢复错了就没救了」。"""
+    from .config import BACKUP_DIR
+
+    directory = Path(backup_dir) if backup_dir else Path(BACKUP_DIR)
+    source = (directory / Path(backup_name).name).resolve()
+
+    # 只允许恢复备份目录下的直接子文件
+    if source.parent != directory.resolve() or not source.is_file():
+        raise FileNotFoundError(f"找不到备份：{backup_name}")
+
+    destination = Path(target)
+    if keep_current and destination.is_file():
+        backup_file(destination, backup_dir=directory)
+
+    write_text_atomic(destination, source.read_text(encoding="utf-8"))
+    return destination
 
 
 def dump_json(data: Any, *, indent: int = 2) -> str:

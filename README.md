@@ -31,6 +31,7 @@
 - [快速开始](#快速开始)
 - [命令速查](#命令速查)
 - [Web 图形界面](#web-图形界面)
+- [分享给别人（隧道）](#分享给别人隧道)
 - [Agent 模式](#agent-模式)
 - [简历底稿怎么写](#简历底稿怎么写)
 - [输出文件](#输出文件)
@@ -165,38 +166,76 @@ python run_web.py --port 8123        # 换端口
 ### 界面能做什么
 
 ```
-┌──────────────┬────────────────────────────────────┐
-│ ① 你的底稿    │  匹配度评分（0-100 + 结论）          │
-│   姓名/技能数 │  六维评分表                          │
-├──────────────┤  优势 / 短板（左右对照）              │
-│ ② 目标 JD     │  待补足的差距（按重要性排序）         │
-│   下拉选择    │  ────────────────────              │
-│   或粘贴原文  │  产出文件（.docx 一键下载）           │
-│   □求职信     │  ────────────────────              │
-│   □面试题     │  完整报告 / 定制简历（可折叠预览）     │
-├──────────────┤                                    │
-│ ③ 实时进度    │                                    │
-└──────────────┴────────────────────────────────────┘
+┌──────────────────┬────────────────────────────────────┐
+│ 🔑 API Key 填写框 │  匹配度评分（0-100 + 结论）          │
+├──────────────────┤  六维评分表                          │
+│ ① 你的底稿        │  优势 / 短板（左右对照）              │
+│   状态 + 编辑/上传 │  待补足的差距（按重要性排序）         │
+├──────────────────┤  ────────────────────              │
+│ ② 目标 JD         │  产出文件（.docx 一键下载）           │
+│   下拉选择        │  ────────────────────              │
+│   或粘贴原文      │  完整报告 / 定制简历（可折叠预览）     │
+│   □求职信 □面试题 │                                    │
+├──────────────────┤                                    │
+│ ③ 实时进度        │                                    │
+└──────────────────┴────────────────────────────────────┘
 ```
 
+- **API Key 填写框**：填自己的 DeepSeek Key，可勾选记住在本机浏览器
+  （`localStorage`，不上传服务器）
+- **底稿编辑 / 上传**：点「编辑 / 上传」打开弹窗，可以直接改文字，
+  也可以拖一个 `.docx` / `.md` / `.txt` 进来自动提取
 - JD 两种来源：从 `data/jds/` 下拉选择，或**直接粘贴 JD 原文**（粘贴优先）
 - 进度实时刷新，不会卡住界面
 - `.docx` 直接下载，`.md` 在浏览器里以纯文本查看
+
+### 底稿编辑与上传
+
+点「① 你的底稿 → 编辑 / 上传」：
+
+- **直接编辑**：文本框里改，点「保存底稿」。保存前**自动备份**到 `.backups/`，
+  最多保留 10 份；右侧列出历史版本，可以「查看」再决定是否「恢复」。
+- **上传文件**：支持 `.docx`、`.md`、`.txt`。
+  提取结果会**先填进文本框让你检查**，确认无误再保存 —— 因为
+  Word 提取不可能 100% 完美。
+- **防误覆盖**：如果新内容不足原来的 50%（比如 3000 字变 500 字），
+  会被拦下并要求勾选「允许大幅缩短」，避免误粘贴把底稿清空。
+
+**`.docx` 提取处理了四种内容位置**（详见 `src/job_agent/docx_reader.py`）：
+
+| 位置 | 为什么需要专门处理 |
+|---|---|
+| 普通段落 | 常规情况 |
+| **表格** | 两栏表格是中文简历最常见排版，只读 `doc.paragraphs` 会**几乎全丢** |
+| **文本框** | 藏在 `w:txbxContent`，python-docx 的 API 读不到，要自己扫 XML |
+| **页眉 / 页脚** | 在独立的 `word/header*.xml` 部件里，不在 `document.xml` |
+
+另外会：按**文档顺序**输出（段落与表格交替，而不是「先所有段落再所有表格」）、
+合并单元格去重、过滤纯页码页脚、嗅探文件头。
+
+**不支持 `.doc` 和 `.pdf`** —— 前者是二进制格式 python-docx 读不了，
+后者双栏还原经常错乱。上传这两种会得到明确提示，让你先另存为 `.docx`。
 
 ### API 一览
 
 | 方法 | 路径 | 作用 |
 |---|---|---|
 | GET | `/` | 界面页面 |
+| GET | `/api/config` | 运行模式（是否分享模式、需要哪个请求头） |
 | GET | `/api/health` | 健康检查 + 当前模型 |
 | GET | `/api/jds` | 列出 `data/jds/` 里的 JD |
 | GET | `/api/profile` | 底稿状态（只读缓存，不调模型） |
-| POST | `/api/run` | 提交分析任务，返回 `job_id` |
+| GET | `/api/profile/raw` | 底稿原文 + 备份列表 |
+| POST | `/api/profile/raw` | 保存底稿（自动备份 + 防误覆盖） |
+| POST | `/api/profile/restore` | 从备份恢复 |
+| GET | `/api/profile/backup/{name}` | 查看某个备份的内容 |
+| POST | `/api/profile/extract` | 上传 `.docx`/`.md`/`.txt` 并提取文本 |
+| POST | `/api/run` | 提交分析任务，返回 `job_id`（Key 走请求头） |
 | GET | `/api/jobs/{id}` | 轮询进度与结果 |
 | GET | `/api/download/{name}` | 下载 `outputs/` 下的产物 |
 | GET | `/api/docs` | 自动生成的交互式接口文档 |
 
-### 四个设计要点
+### 六个设计要点
 
 1. **后台线程执行 + 前端轮询**。单步 LLM 调用实测 14~48 秒，整条流水线
    1~3 分钟。直接同步执行会让页面假死，所以 `POST /api/run` 立刻返回
@@ -209,24 +248,120 @@ python run_web.py --port 8123        # 换端口
 4. **Markdown 用 `MarkdownIt("js-default")` 预设**。默认预设**不渲染表格**，
    而匹配报告大量用表格，否则会显示成一堆 `| 维度 | 得分 |` 原文。
    同时关掉了 `html`，JD 原文里的裸标签会被转义。
+5. **API Key 按请求头携带，不落库**。`Settings` 本来就一路传进
+   `run_pipeline`，所以只要给每次请求 `dataclasses.replace()` 出一个副本即可 ——
+   **业务代码依然零改动，而且天然线程安全**（不会污染全局单例，
+   有测试 `test_with_api_key_does_not_mutate_global_settings` 守着）。
+6. **分享模式下产物按作业隔离**。下载接口要求带 `?job=<id>` 且校验该文件
+   确实属于这个作业，否则任何访客都能猜到别人的简历文件名并下载。
 
 ### 安全说明
 
 - 默认只监听 `127.0.0.1`，仅本机可访问。
-- `--host 0.0.0.0` 会开放到局域网，**此时没有身份认证**，任何能访问该端口的人
-  都能消耗你的 API Key，请勿在公共网络下这么用。
+- `--host 0.0.0.0` 或加隧道会开放到公网，**此时没有登录认证**。
+  本机模式（不加 `--share`）下任何能访问的人都能消耗你的 API Key。
 - 下载接口只允许取 `outputs/` 的**直接子文件**，目录穿越（`../.env`）返回 404，
   有测试覆盖。
-- 服务端**不会**把 API Key 返回给前端。
+- 服务端**不会**把 API Key 返回给前端，也不会写进日志。
 
 ### 跑 Web 层的测试
 
 ```powershell
-python tests\test_webapp.py      # 17 个用例，不消耗 token
+python tests\test_webapp.py           # 17 个用例：接口形状、穿越防护、HTML 转义、前端接线
+python tests\test_webapp_profile.py   # 25 个用例：底稿编辑/备份、上传提取、按请求 Key、分享模式
+python tests\test_docx_reader.py      # 16 个用例：四种内容位置、合并单元格、格式嗅探
 ```
 
-覆盖接口形状、目录穿越防护、HTML 转义、Markdown 表格渲染、URL 编码、
-前端 id 接线、不引入 `ui` 等。
+这三套都不消耗 token。`test_webapp_profile.py` 会把底稿路径重定向到临时目录，
+**不会碰你的真实 `data/master_profile.md`**。
+
+---
+
+## 分享给别人（隧道）
+
+### 先把两个问题说清楚
+
+**1. 隧道 = 用你的电脑当服务器。** 代码、模型调用、文件读写全在你机器上跑，
+隧道只负责把公网请求转发进来。所以**你的电脑必须一直开机、联网、服务不能关**，
+关机链接就失效。
+
+**2. 不能用 Netlify Drop。** Netlify 的 CDN [只提供静态文件，没有任何语言运行时](https://answers.netlify.com/t/support-guide-can-i-run-a-web-server-http-listener-and-or-database-at-netlify/3078)
+（官方原话：no application server or language runtime, meaning no node.js, Ruby, PHP, **Python**），
+跑不了 FastAPI；而且单次流水线实测 76~95 秒，远超 Serverless 函数的时限。
+想分享就用隧道。
+
+### 用 `--share` 启动
+
+```powershell
+python run_web.py --port 8000 --share
+```
+
+`--share` 做四件事：
+
+| 行为 | 为什么 |
+|---|---|
+| **不读 `.env` 的 Key**，访客必须填自己的 | 否则所有访客都在花你的钱 |
+| 未填 Key 的请求返回 `401` | 明确告诉访客要填 Key |
+| **禁用解析缓存** | 访客的简历解析结果不会落在你的磁盘上 |
+| **产物下载按作业隔离**（要求 `?job=<id>`） | 防止访客互相下载到别人的简历 |
+
+访客打开页面会看到提示：
+
+> ⚠ 这是他人分享的服务，你填写的 API Key 只用于你自己的请求、服务端不保存；
+> 运行的 token 费用由你自己的 DeepSeek 账号承担。
+
+**实测验证过的行为**：
+
+```
+无 Key 提交                    -> HTTP 401
+访客自带 Key 提交              -> HTTP 200，76.2 秒跑完，78/100
+裸下载（不带 job 参数）         -> HTTP 403
+带 job 参数下载                -> HTTP 200，10252 字节
+```
+
+### 开隧道
+
+**cloudflared**（免注册，最省事）：
+
+```powershell
+winget install --id Cloudflare.cloudflared
+cloudflared tunnel --url http://127.0.0.1:8000
+```
+
+**ngrok**：
+
+```powershell
+winget install --id Ngrok.Ngrok
+ngrok config add-authtoken <你的 token>
+ngrok http 8000
+```
+
+> 本机实测 `cloudflared` 和 `ngrok` **都还没安装**，但 `winget` 和 `choco` 可用。
+
+命令会打印一个 `https://xxx.trycloudflare.com` 之类的公网地址，发给别人即可。
+
+### 分享前请务必知道
+
+- **仍然没有登录认证**。任何拿到链接的人都能用*他自己的* Key 来跑，
+  你的额度不会被动，但**你的机器在为他们做计算**，而且能看到你 `data/` 里的
+  JD 列表和 `outputs/` 里累积的历史产物。
+- **访客的简历会落在你的磁盘上**。`outputs/` 里的 `.docx` 是访客的简历，
+  分享结束后建议清掉：
+  ```powershell
+  Remove-Item outputs\* -Force
+  ```
+- **Key 会经过隧道服务商**。虽然隧道是 HTTPS、服务端也不存储，
+  但 traffic 确实穿过了 Cloudflare/ngrok 的服务器。敏感场景请勿使用。
+- **想更保险就加一道共享口令**。目前没做，如果需要可以加
+  （一个 `?token=xxx` 或登录 Cookie，约半天工作量）。
+
+### 不想暴露本机？替代方案
+
+| 方案 | 说明 |
+|---|---|
+| 部署到能跑 Python 的平台 | Render / Railway / Fly.io / Hugging Face Spaces —— 需要改成无状态（去掉文件系统依赖），工作量较大 |
+| 纯静态 BYOK 版 | 实测 DeepSeek API **允许浏览器跨域直连**（CORS 会回显 Origin），理论上可以做一个纯前端版本拖到 Netlify Drop。但要**用 JS 重写整条流水线**（提示词、结构化输出重试、docx 导出），两套代码会漂移，不推荐 |
+| 局域网分享 | `python run_web.py --host 0.0.0.0 --share`，同一 WiFi 下用 `http://你的内网IP:8000` 访问，不出公网 |
 
 ---
 
@@ -347,6 +482,7 @@ AI_agent/
 │   ├── match.py                # 匹配度分析
 │   ├── resume.py               # 简历 / 求职信 / 面试题生成
 │   ├── render.py               # 渲染 Markdown 与 Word
+│   ├── docx_reader.py          # ★ .docx 提取（段落+表格+文本框+页眉页脚）
 │   ├── pipeline.py             # 确定性流水线
 │   ├── tools.py                # Agent 工具集 + 会话状态
 │   ├── agent.py                # ★ tool-calling 循环（手写，不依赖 langgraph）
@@ -360,19 +496,25 @@ AI_agent/
 │
 ├── outputs/                    # 生成结果
 ├── webapp/
-│   ├── app.py                  # ★ Web 后端：作业管理 + FastAPI 路由
+│   ├── app.py                  # ★ Web 后端：作业管理 + 底稿编辑 + 按请求 Key
 │   └── static/index.html       # 单页前端（无 CDN，离线可用）
-├── run_web.py                  # Web 界面启动器
+├── run_web.py                  # Web 界面启动器（--share 进分享模式）
 ├── tests/
 │   ├── test_offline.py         # 核心逻辑自测（34 个用例）
-│   └── test_webapp.py          # Web 层自测（17 个用例）
+│   ├── test_webapp.py          # Web 接口与安全（17 个用例）
+│   ├── test_webapp_profile.py  # 底稿编辑/上传/按请求 Key（25 个用例）
+│   └── test_docx_reader.py     # docx 提取（16 个用例）
+├── .backups/                   # 底稿历史备份（最多 10 份）
 └── .cache/                     # 解析缓存
 ```
 
-**跑一遍离线自测**（不花 token）：
+**跑一遍离线自测**（不花 token，共 92 个用例）：
 
 ```powershell
 python tests\test_offline.py          # 34 个用例
+python tests\test_webapp.py           # 17 个用例
+python tests\test_webapp_profile.py   # 25 个用例
+python tests\test_docx_reader.py      # 16 个用例
 python tests\test_offline.py --live   # 额外跑一次真实 API 调用
 ```
 
@@ -485,6 +627,34 @@ Key 错了或已失效。到 <https://platform.deepseek.com/api_keys> 重新生�
 是 PyCharm 建的一个空虚拟环境，和本项目无关（本项目用的是 conda 的
 `langchain_env`）。可以删掉，也可以在 PyCharm 里把解释器指到
 `D:\Project\Anaconda\envs\langchain_env\python.exe`。
+
+---
+
+**Q：上传 `.docx` 后提取的顺序不对 / 有重复内容**
+
+Word 里没有「阅读顺序」这个概念，只有 XML 结构。本项目的处理是：
+按 body 顺序输出段落与表格、按行展平表格、合并单元格去重、文本框并进正文。
+但**复杂排版（多栏、大量文本框、嵌套表格）仍可能不完美** ——
+所以提取结果会先填进文本框让你检查，确认后再保存。
+
+如果顺序实在乱，最省事的办法是：在 Word 里全选复制，直接粘到编辑框里手工整理一次。
+
+**Q：编辑底稿保存后能撤销吗**
+
+能。每次保存前都会自动备份到 `.backups/`，最多保留 10 份，
+在编辑弹窗右侧能看到历史版本，点「查看」比对、点「恢复」回滚。
+恢复操作本身也会先备份当前内容，所以不会「恢复错了就没救」。
+
+**Q：分享给朋友后，他们会用我的 API Key 吗**
+
+不会 —— 前提是你用 `--share` 启动。分享模式下服务端**不读** `.env` 的 Key，
+访客必须填自己的，不填直接 `401`。详见[分享给别人（隧道）](#分享给别人隧道)。
+
+**Q：`.backups/` 和 `.cache/` 能删吗**
+
+能。`.cache/` 是解析缓存（删了下次重新解析，多花点 token）；
+`.backups/` 是底稿历史版本（删了就失去撤销能力，但当前底稿不受影响）。
+两者都已加进 `.gitignore`。
 
 ---
 

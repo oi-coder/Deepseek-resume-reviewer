@@ -72,17 +72,39 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--host", default="127.0.0.1", help="监听地址，默认 127.0.0.1")
     parser.add_argument("--port", type=int, default=8000, help="端口，默认 8000")
     parser.add_argument("--reload", action="store_true", help="改代码自动重载（开发用）")
+    parser.add_argument(
+        "--share",
+        action="store_true",
+        help=(
+            "分享模式：不读 .env 的 Key，访客必须填自己的 Key 才能用；"
+            "产物下载按作业隔离；禁用缓存。配合隧道使用"
+        ),
+    )
     args = parser.parse_args(argv)
 
     _preflight()
 
+    from webapp.app import configure
+
+    configure(share_mode=args.share)
+
     import uvicorn
 
     url = f"http://{args.host}:{args.port}"
-    print("=" * 58)
+    print("=" * 62)
     print(f"  求职 Agent Web 界面：{url}")
+    if args.share:
+        print("  模式：分享模式（--share）")
+        print("    · 访客必须填写自己的 DeepSeek API Key，不会消耗你的额度")
+        print("    · 禁用解析缓存，访客简历不会落在你的磁盘缓存里")
+        print("    · 产物下载按作业隔离，访客之间互不可见")
+        print("    ⚠ 仍无登录认证：任何拿到链接的人都能使用他自己的 Key 来跑")
+        print("    ⚠ outputs/ 里的文件仍在你的磁盘上，请定期清理")
+    else:
+        print("  模式：本机模式（使用 .env 里的 API Key）")
+        print("    如需分享，加 --share，然后用隧道暴露本端口")
     print("  按 Ctrl+C 停止")
-    print("=" * 58)
+    print("=" * 62)
 
     uvicorn.run(
         "webapp.app:app",
